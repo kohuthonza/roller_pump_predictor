@@ -24,9 +24,9 @@ class RegressionModelWrapper():
         return optimizer
 
     def __init__(self, net, optimizer, device):
-        self.net = net
-        self.optimizer = optimizer
         self.device = device
+        self.net = net.to(self.device)
+        self.optimizer = optimizer
         self.loss = torch.nn.MSELoss().to(self.device)
 
     def set_train(self):
@@ -48,7 +48,7 @@ class RegressionModelWrapper():
 
     def forward_pass(self, batch):
         inputs = batch['input_pressure_wave']
-        targets = batch['output_speed_wave']
+        targets = batch['target_speed_wave']
         inputs = inputs.to(self.device).float()
         targets = targets.to(self.device).float()
 
@@ -70,5 +70,7 @@ class RegressionModelWrapper():
             else:
                 if v.shape != state_dict[k].shape:
                     print('WARNING: {} in checkpoint has different shape in net.'.format(k))
+                else:
+                    new_state_dict[k] = state_dict[k]
         state_dict = new_state_dict
         self.net.load_state_dict(state_dict, strict=False)

@@ -1,6 +1,6 @@
 import torch
-import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 import time
 import os
 import sys
@@ -45,6 +45,7 @@ def parseargs():
     parser.add_argument('-i', '--in-checkpoint', type=str)
     parser.add_argument('-o', '--out-checkpoint', type=str)
     parser.add_argument('-d', '--checkpoint-dir', default='.', type=str)
+    parser.add_argument('--test-step', default=500, type=int)
     parser.add_argument('--save-step', default=500, type=int)
     parser.add_argument('--show-dir', default='.', type=str)
 
@@ -68,7 +69,7 @@ def main():
                                               args.tst_prefetch_factor)
     init_show_dirs(args.show_dir)
 
-    gpu_owner = GPUOwner(args.n_gpu)
+    gpu_owner = GPUOwner()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print()
 
@@ -90,6 +91,10 @@ def main():
     print()
     load_weights(model_wrapper, args.in_checkpoint, args.start_iteration, args.checkpoint_dir)
     print()
+
+    if args.view_step is not None:
+        args.test_step = args.view_step
+        args.save_step = args.view_step
 
     def is_valid_iter(it_no, step):
         return it_no % step == 0
@@ -173,31 +178,30 @@ def test(model_wrapper, iteration, dataset, train, show_dir):
     total_net_time = 0
     total_nb_waves = 0
 
-    all_inputs = []
+    all_targets = []
     all_outputs = []
+    all_paths = []
 
     with torch.no_grad():
         for it_count, batch in enumerate(dataset, 1):
-            inputs = batch['input_pressure_wave']
+            targets = batch['target_speed_wave']
+            paths = batch['path']
 
             net_t1 = time.time()
             outputs, loss = model_wrapper.test_step(batch)
 
-            all_inputs.append(inputs)
+            all_targets.append(targets)
             all_outputs.append(outputs)
+            all_paths.append(paths)
 
             total_loss += loss.mean().item()
             total_net_time += time.time() - net_t1
-            total_nb_waves += inputs.shape[0]
-
-            if train:
-                if it_count > 1500 // dataset.batch_size:
-                    break
+            total_nb_waves += targets.shape[0]
 
     t2 = time.time()
 
     print('TEST {} {:d} loss:{:.5f} full_speed:{:.0f} net_speed:{:.0f} time:{:.1f}'.format(
-        dataset.wave_directory_path,
+        dataset.dataset.wave_directory_path,
         iteration,
         total_loss / it_count,
         total_nb_waves / (t2 - t1),
@@ -205,7 +209,7 @@ def test(model_wrapper, iteration, dataset, train, show_dir):
         t2 - t1))
 
     if show_dir is not None:
-        show_images(all_inputs, all_outputs, iteration, dataset.wave_directory_path, train, show_dir)
+        show_images(all_targets, all_outputs, all_paths, iteration, dataset.dataset.wave_directory_path, train, show_dir)
 
 
 def init_datasets(trn_wave_directory_path, tst_wave_directory_path, batch_size, max_pressure=60000, max_speed=1.6,
@@ -231,7 +235,7 @@ def init_datasets(trn_wave_directory_path, tst_wave_directory_path, batch_size, 
     return trn_dataset, tst_datasets
 
 
-def show_images(all_inputs, all_outputs, iteration, wave_directory_path, train, show_dir):
+def show_images(all_targets, all_outputs, all_paths, iteration, wave_directory_path, train, show_dir):
     """
     images = []
     data = data.detach().cpu().numpy()
@@ -255,7 +259,29 @@ def show_images(all_inputs, all_outputs, iteration, wave_directory_path, train, 
         print("SAVING TRAIN BATCH TO: {}".format(image_path))
     cv2.imwrite(image_path, image)
     """
-    pass
+    if train:
+        iteration_dir = os.path.join(show_dir, "train", str(iteration))
+    else:
+        iteration_dir = os.path.join(show_dir, "test", str(iteration))
+    if not os.path.exists(iteration_dir):
+        os.mkdir(iteration_dir)
+
+    counter = 0
+    for targets, outputs, paths in zip(all_targets, all_outputs, all_paths):
+        for target, output, path in zip(targets, outputs, paths):
+            target = target.cpu().numpy()
+            output = output.cpu().numpy()
+            t = np.arange(0, 1, 0.001)
+
+            plt.plot(t, target, color='red', label='target')
+            plt.plot(t, output, color='blue', label='output')
+            plt.legend()
+            plt.savefig(os.path.join(iteration_dir, '{}.pdf'.format(path)))
+            plt.cla()
+            if train:
+                counter += 1
+            if counter == 10:
+                return
 
 
 def init_show_dirs(show_dir):
