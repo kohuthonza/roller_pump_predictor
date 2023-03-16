@@ -30,13 +30,22 @@ class WaveDataset(Dataset):
         input_pressure_wave = []
         target_speed_wave = []
         for l in lines:
-            _, pressure, speed = l.split(",")
-            input_pressure_wave.append(float(pressure))
-            target_speed_wave.append(float(speed))
+            vals = l.split(",")
+            if len(vals) == 3:
+                pressure = float(vals[1])
+                speed = float(vals[2])
+            elif len(vals) == 2:
+                pressure = float(vals[1])
+                speed = 0
+            else:
+                raise SyntaxError
+            input_pressure_wave.append(pressure)
+            target_speed_wave.append(speed)
         input_pressure_wave = np.asarray(input_pressure_wave)
-        target_speed_wave = np.asarray(target_speed_wave)
         input_pressure_wave = input_pressure_wave / (self.max_pressure / 2.0)
-        target_speed_wave = target_speed_wave / (self.max_speed / 2.0)
         input_pressure_wave = input_pressure_wave - 1.0
+        target_speed_wave = np.asarray(target_speed_wave)
+        target_speed_wave = target_speed_wave / (self.max_speed / 2.0)
         target_speed_wave = target_speed_wave - 1.0
         return input_pressure_wave, target_speed_wave
+

@@ -19,7 +19,7 @@ def parseargs():
 
     # Datasets definition
     #
-    parser.add_argument('--trn-wave-directory-path', required=True, type=str)
+    parser.add_argument('--trn-wave-directory-path', type=str)
     parser.add_argument('--tst-wave-directory-path', action='append', type=str)
     parser.add_argument('--trn-num-workers', default=8, type=int)
     parser.add_argument('--tst-num-workers', default=8, type=int)
@@ -39,7 +39,7 @@ def parseargs():
     parser.add_argument('--batch-size', default=16, type=int)
     parser.add_argument('--dropout-rate', default=0.0, type=float)
     parser.add_argument('--start-iteration', default=0, type=int)
-    parser.add_argument('--max-iterations', default=500000, type=int)
+    parser.add_argument('--max-iterations', default=0, type=int)
 
     # Saving models and reporting during training
     #
@@ -113,6 +113,19 @@ def main():
     model_wrapper.set_train()
     iteration = args.start_iteration
     stop_training = False
+
+    if iteration >= args.max_iterations and args.test:
+        print()
+        print(f"TESTING")
+        print("---------------------------------------------------------------------------------------------------")
+        test_datasets(model_wrapper, trn_dataset, tst_datasets, iteration, args.show_dir, args.export_dir)
+        print("---------------------------------------------------------------------------------------------------")
+        print()
+        return
+
+    if trn_dataset is None:
+        return
+
     while True:
         for batch in trn_dataset:
             test_and_show = args.test and (is_valid_iter(iteration, args.test_step) or iteration == args.start_iteration)
@@ -128,14 +141,7 @@ def main():
                 save_weights(model_wrapper, args.out_checkpoint, iteration, args.checkpoint_dir)
 
             if test_and_show:
-                model_wrapper.set_eval()
-                test(model_wrapper, iteration, trn_dataset, train=True, show_dir=args.show_dir,
-                     export_dir=args.export_dir)
-                if tst_datasets:
-                    for tst_dataset in tst_datasets:
-                        test(model_wrapper, iteration, tst_dataset, train=False, show_dir=args.show_dir,
-                             export_dir=args.export_dir)
-                model_wrapper.set_train()
+                test_datasets(model_wrapper, trn_dataset, tst_datasets, iteration, args.show_dir, args.export_dir)
                 print()
 
             if show_train:
@@ -176,6 +182,16 @@ def main():
     training_time += time.time() - train_timer
 
     print("AVERAGE TIME OF 100 ITERATIONS: {}".format((training_time / (args.max_iterations - args.start_iteration)) * 100))
+
+
+def test_datasets(model_wrapper, trn_dataset, tst_datasets, iteration, show_dir, export_dir):
+    model_wrapper.set_eval()
+    if trn_dataset is not None:
+        test(model_wrapper, iteration, trn_dataset, train=True, show_dir=show_dir, export_dir=export_dir)
+    if tst_datasets:
+        for tst_dataset in tst_datasets:
+            test(model_wrapper, iteration, tst_dataset, train=False, show_dir=show_dir, export_dir=export_dir)
+    model_wrapper.set_train()
 
 
 def test(model_wrapper, iteration, dataset, train, show_dir, export_dir):
@@ -233,16 +249,15 @@ def show_waves(all_targets, all_outputs, all_paths, max_speed, iteration, wave_d
             output += 1
             output = output * (max_speed / 2.0)
             t = np.arange(0, 1, 0.001)
-
+            ax = plt.gca()
+            ax.set_ylim([0, max_speed])
             plt.plot(t, target, color='red', label='target')
-            plt.plot(t, output, color='blue', label='output')
+            plt.plot(t, output, color='blue', label='output', linewidth=0.7)
             plt.legend()
             plt.savefig(os.path.join(iteration_dir, '{}.pdf'.format(path)))
             plt.cla()
             if train:
                 counter += 1
-            if counter == 40:
-                return
 
 
 def export_waves(all_outputs, all_paths, max_speed, iteration, wave_directory_path, export_dir):
@@ -284,7 +299,6 @@ def init_datasets(trn_wave_directory_path, tst_wave_directory_path, batch_size, 
             tst_datasets.append(tst_dataset)
 
     return trn_dataset, tst_datasets
-
 
 
 def load_weights(training, in_checkpoint=None, start_iteration=0, checkpoint_dir=None):
